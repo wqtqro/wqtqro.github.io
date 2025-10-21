@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>勤怠カレンダー（半休・メモ対応）</title>
+<style>
+:root{--bg:#fff;--ink:#111;--muted:#666;--line:#e2e2e7;--off:#ffe9e3;--off-ink:#a73a2a;--work:#e9f8f0;--work-ink:#0a6a41;--half:#fff7d6;--half-ink:#7a5a00;--sel:#ffd24d;--adj:#f3f3f6}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Arial,sans-serif;color:var(--ink);background:var(--bg)}
+header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--line);padding:calc(env(safe-area-inset-top)+8px) 14px 8px}
+h1{margin:0 0 6px;font-size:18px}
+main{padding:12px 14px calc(136px + env(safe-area-inset-bottom))}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.card small{color:var(--muted);display:block}
+.calendar{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.monthbar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);background:#fafafa}
+.monthbar h2{margin:0;font-size:16px}.monthbar .sp{flex:1}
+.ctrl{appearance:none;border:1px solid var(--line);background:#fff;padding:6px 10px;border-radius:10px;font-weight:700}
+.weekdays,.grid{display:grid;grid-template-columns:repeat(7,1fr)}
+.weekdays div{text-align:center;font-weight:700;padding:8px 0;background:#fafafa;border-bottom:1px solid var(--line)}
+.weekdays .sun{color:#c0392b}.weekdays .sat{color:#2980b9}
+.grid{grid-auto-rows:82px}
+.cell{position:relative;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px;display:flex;flex-direction:column;gap:4px}
+.cell:nth-child(7n){border-right:none}
+.num{font-weight:800;font-size:16px}
+.badge{align-self:flex-end;font-size:11px;padding:2px 6px;border-radius:10px;border:1px solid var(--line);background:#ffffffcc}
+.note{position:absolute;left:6px;bottom:6px;font-size:11px;max-width:78%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.9}
+.cell.off{background:var(--off);color:var(--off-ink)}
+.cell.work{background:var(--work);color:var(--work-ink)}
+.cell.half{background:var(--half);color:var(--half-ink)}
+.cell.selected{outline:3px solid var(--sel);outline-offset:-3px}
+.cell.adj{background:var(--adj);color:#777}.cell.adj .num{opacity:.7}
+.legend{display:flex;gap:10px;align-items:center;color:var(--muted);margin-top:8px;font-size:12px}
+.dot{width:12px;height:12px;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:4px;border:1px solid var(--line)}
+.dot.off{background:var(--off);border-color:#f3b9aa}.dot.work{background:var(--work);border-color:#b7e5cf}.dot.half{background:var(--half);border-color:#f0df99}
+.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:10px calc(12px + env(safe-area-inset-left)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-right));background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.actionbar .label{grid-column:span 5;text-align:center;color:var(--muted);font-size:13px}
+.btn{appearance:none;border:1px solid var(--line);border-radius:12px;padding:10px 6px;font-weight:800}
+.btn-off{background:var(--off);color:var(--off-ink);border-color:#f3b9aa}
+.btn-work{background:var(--work);color:var(--work-ink);border-color:#b7e5cf}
+.btn-half{background:var(--half);color:var(--half-ink);border-color:#f0df99}
+.btn:disabled{opacity:.5}
+.error{color:#b00020;background:#ffecec;border:1px solid #ffb3b3;border-radius:8px;padding:8px;margin-top:8px;display:none}
+</style>
+</head>
+<body>
+<header><h1>勤怠カレンダー</h1></header>
+
+<main>
+  <section class="summary">
+    <div class="card"><small>今月の休み</small><div id="offCount" style="font-size:22px;font-weight:800">0</div></div>
+    <div class="card"><small>今月の出勤</small><div id="workCount" style="font-size:22px;font-weight:800">0</div></div>
+    <div class="card"><small>合計日数</small><div id="totalCount" style="font-size:22px;font-weight:800">0</div></div>
+  </section>
+
+  <section class="calendar">
+    <div class="monthbar">
+      <button id="prev" class="ctrl">〈</button>
+      <div class="sp"></div>
+      <h2 id="monthLabel">0000年 00月</h2>
+      <div class="sp"></div>
+      <button id="next" class="ctrl">〉</button>
+      <button id="todayBtn" class="ctrl">今日</button>
+    </div>
+    <div class="weekdays">
+      <div class="sun">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div class="sat">土</div>
+    </div>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <div class="legend">
+    <span><i class="dot off"></i>休み</span>
+    <span><i class="dot work"></i>出勤</span>
+    <span><i class="dot half"></i>半休（午前/午後）</span>
+  </div>
+
+  <div id="err" class="error">スクリプトエラーが発生しました。もう一度開き直してください。</div>
+</main>
+
+<div class="actionbar">
+  <div class="label" id="selLabel">日付を選択してください</div>
+  <button id="setOff" class="btn btn-off" disabled>休日</button>
+  <button id="setWork" class="btn btn-work" disabled>出勤</button>
+  <button id="setAm"  class="btn btn-half" disabled>午前半</button>
+  <button id="setPm"  class="btn btn-half" disabled>午後半</button>
+  <button id="setNote" class="btn" disabled>メモ</button>
+</div>
+
+<script>
+const KEY_PREFIX="attcal_";
+const monthLabel=document.querySelector("#monthLabel"),grid=document.querySelector("#grid");
+const offCountEl=document.querySelector("#offCount"),workCountEl=document.querySelector("#workCount"),totalCountEl=document.querySelector("#totalCount");
+const selLabel=document.querySelector("#selLabel"),
+      setOffBtn=document.querySelector("#setOff"),
+      setWorkBtn=document.querySelector("#setWork"),
+      setAmBtn =document.querySelector("#setAm"),
+      setPmBtn =document.querySelector("#setPm"),
+      setNoteBtn=document.querySelector("#setNote");
+const errBox=document.querySelector("#err");
+let viewYear,viewMonth;let selectedDateStr=null;
+
+function startToday(){const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())}
+function toKeyDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),da=String(d.getDate()).padStart(2,"0");return`${y}-${m}-${da}`}
+function daysInMonth(y,m){return new Date(y,m+1,0).getDate()}
+function keyMonth(y,m){return`${KEY_PREFIX}${y}-${String(m+1).padStart(2,"0")}`}
+function loadMonth(y,m){try{return JSON.parse(localStorage.getItem(keyMonth(y,m))||"{}")}catch(e){return{}}}
+function saveMonth(y,m,data){localStorage.setItem(keyMonth(y,m),JSON.stringify(data))}
+function safe(fn){try{fn()}catch(e){console.error(e);errBox.style.display="block"}}
+
+// 旧データ（"off"/"work" だけ）→ 新形式 {status, note} へ
+function toEntry(raw){if(!raw)return null; if(typeof raw==="string")return {status:raw,note:""}; return raw}
+function putEntry(st,k,entry){st[k]=entry}
+
+function build(){const now=startToday();viewYear=now.getFullYear();viewMonth=now.getMonth();selectedDateStr=null;safe(render)}
+
+function render(){
+  monthLabel.textContent=`${viewYear}年 ${viewMonth+1}月`;
+  const state=loadMonth(viewYear,viewMonth);
+  const first=new Date(viewYear,viewMonth,1);
+  const dim=daysInMonth(viewYear,viewMonth);
+  const firstWeekday=first.getDay();
+
+  // 未設定の日曜を初期OFF
+  for(let d=1;d<=dim;d++){
+    const dt=new Date(viewYear,viewMonth,d);
+    const k=toKeyDate(dt);
+    if(!state[k]&&dt.getDay()===0){state[k]={status:"off",note:""}}
+  }
+  saveMonth(viewYear,viewMonth,state);
+
+  // 6x7 グリッド
+  const prevMonth=(viewMonth+11)%12,nextMonth=(viewMonth+1)%12;
+  const prevYear=viewMonth===0?viewYear-1:viewYear,nextYear=viewMonth===11?viewYear+1:viewYear;
+  const prevDim=daysInMonth(prevYear,prevMonth);
+  const cells=[];
+  for(let i=0;i<firstWeekday;i++){const dayNum=prevDim-firstWeekday+i+1;cells.push({date:new Date(prevYear,prevMonth,dayNum),inMonth:false})}
+  for(let d=1;d<=dim;d++){cells.push({date:new Date(viewYear,viewMonth,d),inMonth:true})}
+  while(cells.length<42){const dayNum=cells.length-(firstWeekday+dim)+1;cells.push({date:new Date(nextYear,nextMonth,dayNum),inMonth:false})}
+
+  grid.innerHTML="";
+  let offEq=0, workEq=0;
+
+  for(const c of cells){
+    const k=toKeyDate(c.date);
+    const cell=document.createElement("div");cell.className="cell";
+    const num=document.createElement("div");num.className="num";num.textContent=c.date.getDate();cell.appendChild(num);
+
+    if(c.inMonth){
+      const st=loadMonth(c.date.getFullYear(),c.date.getMonth());
+      let entry=toEntry(st[k])||{status:"work",note:""};
+
+      // 色 & バッジ
+      let badgeText="出";
+      if(entry.status==="off"){cell.classList.add("off");badgeText="休"}
+      else if(entry.status==="am_half"){cell.classList.add("half");badgeText="午前半"}
+      else if(entry.status==="pm_half"){cell.classList.add("half");badgeText="午後半"}
+      else{cell.classList.add("work")}
+
+      if(selectedDateStr===k)cell.classList.add("selected");
+      const badge=document.createElement("div");badge.className="badge";badge.textContent=badgeText;cell.appendChild(badge);
+
+      if(entry.note){
+        const note=document.createElement("div");note.className="note";note.textContent="📝 "+entry.note;cell.appendChild(note);
+      }
+      cell.dataset.date=k;
+
+      // 集計（等価日数）
+      if(entry.status==="off"){offEq+=1}
+      else if(entry.status==="work"){workEq+=1}
+      else{offEq+=0.5; workEq+=0.5} // 半休は0.5ずつ
+    }else{
+      cell.classList.add("adj");
+    }
+    grid.appendChild(cell);
+  }
+
+  offCountEl.textContent = (Math.round(offEq*10)/10).toString();
+  workCountEl.textContent = (Math.round(workEq*10)/10).toString();
+  totalCountEl.textContent = (Math.round((offEq+workEq)*10)/10).toString();
+
+  if(selectedDateStr){
+    selLabel.textContent=`${selectedDateStr} を選択中`;
+    setOffBtn.disabled=false; setWorkBtn.disabled=false; setAmBtn.disabled=false; setPmBtn.disabled=false; setNoteBtn.disabled=false;
+  }else{
+    selLabel.textContent="日付を選択してください";
+    setOffBtn.disabled=true; setWorkBtn.disabled=true; setAmBtn.disabled=true; setPmBtn.disabled=true; setNoteBtn.disabled=true;
+  }
+}
+
+grid.addEventListener("click",e=>{const cell=e.target.closest(".cell");if(!cell||!cell.dataset.date)return;selectedDateStr=cell.dataset.date;safe(render)});
+
+function setStatus(kind){
+  if(!selectedDateStr)return;
+  const d=new Date(selectedDateStr);const y=d.getFullYear(),m=d.getMonth();
+  const st=loadMonth(y,m);let entry=toEntry(st[selectedDateStr])||{status:"work",note:""};
+  entry.status=kind; putEntry(st,selectedDateStr,entry); saveMonth(y,m,st); safe(render);
+}
+setOffBtn.addEventListener("click",()=>setStatus("off"));
+setWorkBtn.addEventListener("click",()=>setStatus("work"));
+setAmBtn .addEventListener("click",()=>setStatus("am_half"));
+setPmBtn .addEventListener("click",()=>setStatus("pm_half"));
+
+setNoteBtn.addEventListener("click",()=>{
+  if(!selectedDateStr)return;
+  const d=new Date(selectedDateStr);const y=d.getFullYear(),m=d.getMonth();
+  const st=loadMonth(y,m);let entry=toEntry(st[selectedDateStr])||{status:"work",note:""};
+  const current=entry.note||"";
+  const text=prompt(`${selectedDateStr} のメモ`, current);
+  if(text===null)return;
+  entry.note=(text||"").trim().slice(0,80);
+  putEntry(st,selectedDateStr,entry); saveMonth(y,m,st); safe(render);
+});
+
+document.getElementById("prev").addEventListener("click",()=>{if(viewMonth===0){viewMonth=11;viewYear--}else{viewMonth--}selectedDateStr=null;safe(render)});
+document.getElementById("next").addEventListener("click",()=>{if(viewMonth===11){viewMonth=0;viewYear++}else{viewMonth++}selectedDateStr=null;safe(render)});
+document.getElementById("todayBtn").addEventListener("click",()=>{const now=startToday();viewYear=now.getFullYear();viewMonth=now.getMonth();selectedDateStr=toKeyDate(now);safe(render)});
+build();
+</script>
+</body>
+</html>
